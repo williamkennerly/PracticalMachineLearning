@@ -1,0 +1,62 @@
+---
+title: "Predicting Quality of Exercise"
+author: "Ed Fizz, Polk High School"
+date: "May 21, 2015"
+output: html_document
+---
+
+Listen up!  This will be the most intense physical education class you've ever taken!  You will be doing intense weight lifting and I demand absolutely perfect form so you can grow into lean and poised adults.  But I'm also lazy, I'm not going to waste time watching you jackalopes sweat to make sure you do it right.  I'm going to attach these sensors all over your body that will monitor every aspect of your form.  The data is transmitted to my computer back in the office and I'll analyze it.  How?  Using the powers every high school coach learns in college:  intense data analysis and modern predictive algorithms, that's how.  And if you do your job right, I'll know.  If you do your job wrong, I'll know it.  That's sensitivity and specificity.  Yeah, coaches want to be sensitive.  With good technique you too can score four touchdowns in a single game. 
+
+## Data Cleaning
+From six prior students that I focus-grouped my techniques on, I've collected 19622 observations in a data set, each with 160 variables.  However a bunch of that data was just useless.  I removed all the data associated with 67 variables that were not recorded (`NA`) for even just one observation, and then removed 34 variables that had near-zero variance over the whole data set using the `nearZeroVar()` function in R, and then further removed 5 more variables that had irrelevant data like names and timestamps.  This left 53 variables in the data set:  52 potential predictors to analyze for their ability to predict the exercise form stored in the variable `classe`, as either "A" (perfect form), "B", "C", "D", or "E" (which each represents a different technique error).
+
+## Methods
+Classification trees are the natural choice for this problem, since we are trying to classify an observation into one of five categories, and there is no reason to think the predictors are linearly related (as would be implied with linear regression). First I built a single regression tree, and then tried using the random forest method. All models were built using the `caret` package and the `train()` function.  10-fold cross-validation (within the training set) with 10 repetitions were used for each model.
+
+The 19622 observations were broken into a training set (60% = 11776 observations) and a testing set (40% = 7846 observations).   Models were built on the training set only and then applied to the testing set. 
+
+## Results
+The results are shown here and the models are discussed below.  The in-sample accuracy is the exact accuracy for the given training set (this is calculated with the `confusionMatrix()` command). The estimated out-of-sample accuracy is what is calculated while the model is being built by the `train()` command, as an average of the testing accuracies over all the repititions on the 1 fold left out during 10-fold cross-validation on the training set. The last column, the actual testing set accuracy, is the exact accuracy found on the 40% of observations held out for testing from the original data.
+
+Model | in-sample accuracy(training) | estimated out-of-sample accuracy | actual testing set accuracy
+------|------------------------------|----------------------------------|-------------
+CART  |  0.5549                      | 0.5558                           | 0.5609
+RF    |  1.000                       | 0.9910                           | 0.9917
+RF2   |  1.000                       | 0.9806                           | 0.9847
+
+## Discussion of Models
+The single regression tree (called CART in the table) was built with the commands:
+```{r eval=FALSE}
+ctrl <- trainControl(method = "cv", number=10, repeats=10)
+modelFitCART <- train(classe ~ ., data=training, method="rpart2", trControl=ctrl)
+```
+The tuning found that optimally `maxdepth=5` and the seven most important variables, in order of decreasing importance, were `roll_belt, pitch_forearm, roll_forearm, magnet_dumbbell_y, yaw_belt, total_accel_belt, accel_belt_z`
+
+Obviously using just one tree was not particuarly good as the accuracies were only around 55%.
+
+Next a complete random forests ensemble calculation was done using all 52 predictors and the complete training set (called RF in the table above) using the command
+```{r eval=FALSE}
+modelFitRF <- train(classe ~ ., data=training, method="rf", trControl=ctrl)
+```
+The tuning found that optimally `mtry=27`, which quantifies how many random predictors are selected and evaluated at each node in the tree as the model is built.  The seven most important variables identified by the algorithm were `roll_belt, pitch_forearm, yaw_belt, magnet_dumbbell_z, magnet_dumbbell_y, pitch_belt, roll_forearm`
+
+Obviously the model RF performed much better.  The model may have just slightly overfitted the training set (perfect accuracy!) but the estimated out-of-sample accuracy and the testing set accuracy were very high at about 99%.
+
+Lastly a truncated random forest (RF2) model using only the top 7 predictors from the RF was built, mostly out of curiousity to see how well it could do with much less information.  Also, dramatically less time was required to build this model (2 minutes vs 20 minutes).
+```{r eval=FALSE}
+modelFitRF2 <- train(classe ~ roll_belt + pitch_forearm + yaw_belt + magnet_dumbbell_z + magnet_dumbbell_y + pitch_belt + roll_forearm, data=training, method="rf", trControl=ctrl)
+```
+The tuning found that optimally `mtry=4`.  It is striking that the training set accuracy is still perfect and the out-of-sample accuracy and testing set accuracy both exceed 98% with much less data to build the model on.
+
+Here's a pretty cool picture because I love doing this shit.  It shows how the top two variables relate to one another while colouring (NOTE: <-- British spelling) the data points by their exercise form.  This one plot does show a pretty good separation of class E from the rest, with some separation for class D too. 
+```{r echo=FALSE,warning=FALSE,message=FALSE}
+library(caret)
+df <- read.csv("pml-training.csv")
+set.seed(54321)
+inTrain <- createDataPartition(y = df$classe, p = 0.6, list=FALSE)
+training <- df[inTrain,]
+qplot(roll_belt,pitch_forearm, colour=classe, data=training)
+```
+
+## Conclusion
+Random forests proved to build an extremely powerful prediction algorithm for this data set.  This will make my coaching job easy.   Perhaps for your next exercise I'll have you go for a run... through some trees... in a random forest.  
